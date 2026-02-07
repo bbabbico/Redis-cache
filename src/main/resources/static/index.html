@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis Cache vs DB Performance Comparison</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            text-align: center;
+            color: #5a67d8;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #718096;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 25px;
+            background: #f7fafc;
+            border-radius: 15px;
+            border-left: 5px solid #5a67d8;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(90, 103, 216, 0.2);
+        }
+
+        .section h2 {
+            color: #2d3748;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section h2::before {
+            content: "●";
+            color: #5a67d8;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #4a5568;
+            font-weight: 600;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #5a67d8;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.secondary {
+            background: linear-gradient(135deg, #38b2ac 0%, #2c7a7b 100%);
+        }
+
+        button.danger {
+            background: linear-gradient(135deg, #fc8181 0%, #e53e3e 100%);
+        }
+
+        .result-box {
+            margin-top: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+            min-height: 100px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            color: #2d3748;
+        }
+
+        .comparison-result {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .comparison-card {
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+        }
+
+        .comparison-card h3 {
+            margin-bottom: 15px;
+            color: #2d3748;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            color: #5a67d8;
+        }
+
+        .speedup {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #5a67d8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🚀 Redis Cache Performance Test</h1>
+        <p class="subtitle">Spring Boot + MySQL + Redis 성능 비교 테스트</p>
+
+        <!-- 제품 저장 섹션 -->
+        <div class="section">
+            <h2>제품 저장 (Write Around Pattern)</h2>
+            <div class="form-group">
+                <label for="productName">제품 이름:</label>
+                <input type="text" id="productName" placeholder="예: 노트북">
+            </div>
+            <div class="form-group">
+                <label for="productPrice">제품 가격:</label>
+                <input type="number" id="productPrice" placeholder="예: 50000">
+            </div>
+            <button onclick="saveProduct()">💾 저장</button>
+            <div id="saveResult" class="result-box" style="display: none;"></div>
+        </div>
+
+        <!-- 단일 제품 조회 섹션 -->
+        <div class="section">
+            <h2>단일 제품 조회 (Look Aside Pattern)</h2>
+            <div class="form-group">
+                <label for="productId">제품 ID:</label>
+                <input type="number" id="productId" placeholder="예: 1">
+            </div>
+            <button onclick="getProductCache()">🔍 캐시로 조회</button>
+            <button class="secondary" onclick="getProductDb()">🗄️ DB로 직접 조회</button>
+            <button class="danger" onclick="compareOne()">⚡ 성능 비교</button>
+            <div id="singleResult" class="result-box" style="display: none;"></div>
+        </div>
+
+        <!-- 모든 제품 조회 섹션 -->
+        <div class="section">
+            <h2>모든 제품 조회</h2>
+            <button onclick="getAllProductsCache()">🔍 캐시로 전체 조회</button>
+            <button class="secondary" onclick="getAllProductsDb()">🗄️ DB로 전체 직접 조회</button>
+            <button class="danger" onclick="compareAll()">⚡ 전체 성능 비교</button>
+            <div id="allResult" class="result-box" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/products';
+
+        // 제품 저장
+        async function saveProduct() {
+            const name = document.getElementById('productName').value;
+            const price = parseInt(document.getElementById('productPrice').value);
+
+            if (!name || !price) {
+                alert('제품 이름과 가격을 입력해주세요.');
+                return;
+            }
+
+            try {
+                const response = await fetch(API_BASE, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name, price })
+                });
+
+                const data = await response.json();
+                const resultDiv = document.getElementById('saveResult');
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `✅ 제품이 저장되었습니다!\n\nID: ${data.id}\n이름: ${data.name}\n가격: ${data.price}`;
+
+                // 입력 필드 초기화
+                document.getElementById('productName').value = '';
+                document.getElementById('productPrice').value = '';
+            } catch (error) {
+                alert('저장 실패: ' + error.message);
+            }
+        }
+
+        // 캐시로 단일 제품 조회
+        async function getProductCache() {
+            const id = document.getElementById('productId').value;
+            if (!id) {
+                alert('제품 ID를 입력해주세요.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/cache/${id}`);
+                const data = await response.json();
+                displaySingleResult(data, '캐시');
+            } catch (error) {
+                alert('조회 실패: ' + error.message);
+            }
+        }
+
+        // DB로 단일 제품 직접 조회
+        async function getProductDb() {
+            const id = document.getElementById('productId').value;
+            if (!id) {
+                alert('제품 ID를 입력해주세요.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/db/${id}`);
+                const data = await response.json();
+                displaySingleResult(data, 'DB');
+            } catch (error) {
+                alert('조회 실패: ' + error.message);
+            }
+        }
+
+        // 단일 제품 결과 표시
+        function displaySingleResult(data, source) {
+            const resultDiv = document.getElementById('singleResult');
+            resultDiv.style.display = 'block';
+
+            if (data.product) {
+                resultDiv.innerHTML = `
+📊 조회 결과 (${source})
+━━━━━━━━━━━━━━━━━━━━━━
+ID: ${data.product.id}
+이름: ${data.product.name}
+가격: ${data.product.price}
+
+⏱️ 소요 시간: ${data.duration}ms
+                `;
+            } else {
+                resultDiv.innerHTML = `❌ 제품을 찾을 수 없습니다.`;
+            }
+        }
+
+        // 캐시로 모든 제품 조회
+        async function getAllProductsCache() {
+            try {
+                const response = await fetch(`${API_BASE}/cache/all`);
+                const data = await response.json();
+                displayAllResults(data, '캐시');
+            } catch (error) {
+                alert('조회 실패: ' + error.message);
+            }
+        }
+
+        // DB로 모든 제품 직접 조회
+        async function getAllProductsDb() {
+            try {
+                const response = await fetch(`${API_BASE}/db/all`);
+                const data = await response.json();
+                displayAllResults(data, 'DB');
+            } catch (error) {
+                alert('조회 실패: ' + error.message);
+            }
+        }
+
+        // 모든 제품 결과 표시
+        function displayAllResults(data, source) {
+            const resultDiv = document.getElementById('allResult');
+            resultDiv.style.display = 'block';
+
+            let productsText = '';
+            if (data.products && data.products.length > 0) {
+                productsText = data.products.map(p =>
+                    `  • ID: ${p.id}, 이름: ${p.name}, 가격: ${p.price}`
+                ).join('\n');
+            } else {
+                productsText = '  (데이터 없음)';
+            }
+
+            resultDiv.innerHTML = `
+📊 전체 조회 결과 (${source})
+━━━━━━━━━━━━━━━━━━━━━━
+제품 개수: ${data.count}개
+
+${productsText}
+
+⏱️ 소요 시간: ${data.duration}ms
+            `;
+        }
+
+        // 단일 제품 성능 비교
+        async function compareOne() {
+            const id = document.getElementById('productId').value;
+            if (!id) {
+                alert('제품 ID를 입력해주세요.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/compare/${id}`);
+                const data = await response.json();
+
+                const resultDiv = document.getElementById('singleResult');
+                resultDiv.style.display = 'block';
+
+                if (data.product) {
+                    resultDiv.innerHTML = `
+⚡ 성능 비교 결과
+━━━━━━━━━━━━━━━━━━━━━━
+제품 정보:
+  ID: ${data.product.id}
+  이름: ${data.product.name}
+  가격: ${data.product.price}
+
+⏱️ 소요 시간:
+  🔍 캐시 조회: ${data.cacheDuration}ms
+  🗄️ DB 직접 조회: ${data.dbDuration}ms
+
+🚀 성능 향상: ${data.speedup}
+                    `;
+                } else {
+                    resultDiv.innerHTML = `❌ 제품을 찾을 수 없습니다.`;
+                }
+            } catch (error) {
+                alert('비교 실패: ' + error.message);
+            }
+        }
+
+        // 전체 제품 성능 비교
+        async function compareAll() {
+            try {
+                const response = await fetch(`${API_BASE}/compare/all`);
+                const data = await response.json();
+
+                const resultDiv = document.getElementById('allResult');
+                resultDiv.style.display = 'block';
+
+                let productsText = '';
+                if (data.products && data.products.length > 0) {
+                    productsText = data.products.slice(0, 10).map(p =>
+                        `  • ID: ${p.id}, 이름: ${p.name}, 가격: ${p.price}`
+                    ).join('\n');
+                    if (data.products.length > 10) {
+                        productsText += `\n  ... 외 ${data.products.length - 10}개`;
+                    }
+                } else {
+                    productsText = '  (데이터 없음)';
+                }
+
+                resultDiv.innerHTML = `
+⚡ 전체 성능 비교 결과
+━━━━━━━━━━━━━━━━━━━━━━
+제품 개수: ${data.count}개
+
+${productsText}
+
+⏱️ 소요 시간:
+  🔍 캐시 조회: ${data.cacheDuration}ms
+  🗄️ DB 직접 조회: ${data.dbDuration}ms
+
+🚀 성능 향상: ${data.speedup}
+                `;
+            } catch (error) {
+                alert('비교 실패: ' + error.message);
+            }
+        }
+    </script>
+</body>
+
+</html>
